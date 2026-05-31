@@ -2,6 +2,7 @@
 
 **Date:** 2026-05-31  
 **Status:** All 7 milestones complete. Product is ready for internal use.  
+**GitHub:** https://github.com/godave81/Cynthia (private)  
 **Session history:** Full transcript at `/Users/davidmunoz/.claude/projects/-Users-davidmunoz-Documents-Documents---David-s-MacBook-Air-JUSTANOTHERPM-aipm-main/`
 
 ---
@@ -71,10 +72,11 @@ Or just open a terminal, `cd` to the project, and `npm run dev`.
 
 ## 5. API Key Setup
 
-- File: `.env.local` in project root
+- File: `.env.local` in project root (gitignored — never committed)
 - Variable: `ANTHROPIC_API_KEY` (no `VITE_` prefix — key never goes to browser)
 - Key is injected by `vite.config.ts` via `proxy.on('proxyReq')` using `fs.readFileSync`
 - If key changes, just update `.env.local` and restart the dev server
+- Template: `.env.local.example` is committed and safe to share
 
 ---
 
@@ -82,13 +84,17 @@ Or just open a terminal, `cd` to the project, and `npm run dev`.
 
 ```
 Cynthia/
+├── README.md                       GitHub-facing project documentation
 ├── PRD.md                          Product requirements
 ├── TASKS.md                        Milestone checklist (all complete)
 ├── CLAUDE.md                       Claude-specific instructions
 ├── DECISIONS.md                    Architecture decisions log
 ├── PLANNING.md                     System design notes
+├── HANDOVER.md                     This file — session context for new Claude sessions
+├── .gitignore                      Excludes node_modules, dist, .env.local, .DS_Store
 ├── vite.config.ts                  Dev server + API proxy (key injection here)
 ├── .env.local                      ANTHROPIC_API_KEY (gitignored)
+├── .env.local.example              Safe template (committed)
 └── src/
     ├── App.tsx                     Router setup
     ├── context/
@@ -225,7 +231,31 @@ Single flat CSV. All 17 fields per row:
 
 ---
 
-## 11. Known Constraints / Gotchas
+## 11. GitHub Repository
+
+**URL:** https://github.com/godave81/Cynthia  
+**Visibility:** Private  
+**Branch:** `main`  
+**Commits:**
+- `b7b0a03` — Initial commit — Cynthia v1.0 (Milestones 1–7 complete) — 40 files, 6,871 insertions
+- `2ec3978` — Add README.md with full project documentation
+
+**What is committed:** All source files, config, and docs  
+**What is gitignored:** `.env.local` (API key), `node_modules/`, `dist/`, `.DS_Store`
+
+**Git tooling:** GitHub CLI (`gh`) installed at `/opt/homebrew/bin/gh` via Homebrew. Authenticated as `godave81`.
+
+**To push future changes:**
+```bash
+# From the project directory (use Python subprocess for iCloud path):
+git add <files>
+git commit -m "your message"
+git push origin main
+```
+
+---
+
+## 12. Known Constraints / Gotchas
 
 1. **iCloud path** — always use Python `os.walk` to resolve project path; bash `cd` unreliable
 2. **API key** — in `.env.local` as `ANTHROPIC_API_KEY` (no VITE_ prefix). Restart dev server after any key change
@@ -236,7 +266,7 @@ Single flat CSV. All 17 fields per row:
 
 ---
 
-## 12. What Could Come Next (not started)
+## 13. What Could Come Next (not started)
 
 Per PRD, future milestones could include:
 - Supabase integration (job history persistence)
@@ -249,13 +279,14 @@ No work has started on any of these.
 
 ---
 
-## 13. How to Start a New Claude Session
+## 14. How to Start a New Claude Session
 
 1. Open Claude Code in the Cynthia project directory, or share this file
 2. Say: *"Read HANDOVER.md and continue working on Cynthia"*
 3. Claude should re-read `CLAUDE.md`, `TASKS.md`, and `PRD.md` for live state
 4. Dev server: run `npm run dev` from the project directory (port 3456)
+5. GitHub repo: https://github.com/godave81/Cynthia
 
 ---
 
-*Generated 2026-05-31 — end of session handover*
+*Updated 2026-05-31 — GitHub push + README added*
