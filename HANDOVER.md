@@ -1,8 +1,9 @@
 # HANDOVER.md — Cynthia Project
 
 **Date:** 2026-05-31  
-**Status:** All 7 milestones complete. Product is ready for internal use.  
+**Status:** All 7 milestones complete. Deployed to production.  
 **GitHub:** https://github.com/godave81/Cynthia (private)  
+**Live app:** https://cynthia-godave81-s-projects.vercel.app  
 **Session history:** Full transcript at `/Users/davidmunoz/.claude/projects/-Users-davidmunoz-Documents-Documents---David-s-MacBook-Air-JUSTANOTHERPM-aipm-main/`
 
 ---
@@ -44,10 +45,12 @@ Always write files via Python subprocess with `sys.argv[1]` or use `open(path, '
 | Routing | React Router v6 |
 | CSV parsing | PapaParse (client-side) |
 | AI | Anthropic Claude API (`claude-sonnet-4-6`) |
-| API key | Server-side proxy injection — NEVER in browser bundle |
+| API key (dev) | Vite dev server proxy injects from `.env.local` |
+| API key (prod) | Vercel serverless function injects from env var |
 | Auth | None (internal tool) |
-| Backend | None — Vite dev server acts as proxy |
+| Backend | None — Vite dev server (dev) / Vercel functions (prod) act as proxy |
 | DB | None (Supabase planned for future milestones) |
+| Hosting | Vercel (auto-deploy on push to `main`) |
 
 ---
 
@@ -55,16 +58,17 @@ Always write files via Python subprocess with `sys.argv[1]` or use `open(path, '
 
 ```bash
 # Start dev server (port 3456)
-# Do this via Python subprocess to handle iCloud path:
-import subprocess, os
-project = "<resolved path from os.walk above>"
+npm run dev
+```
+
+Or via Python subprocess to handle iCloud path:
+```python
+import subprocess
 subprocess.Popen(['npm', 'run', 'dev'], cwd=project)
 ```
 
-Or just open a terminal, `cd` to the project, and `npm run dev`.
-
 - Dev server: `http://localhost:3456`
-- Proxy: all requests to `/api/anthropic/*` → `https://api.anthropic.com/*` with API key injected server-side
+- Proxy: all requests to `/api/anthropic/*` → `https://api.anthropic.com/*` with API key injected server-side via `vite.config.ts`
 
 **TypeScript check:** `npx tsc --noEmit` (run from project root) — should be clean.
 
@@ -72,11 +76,17 @@ Or just open a terminal, `cd` to the project, and `npm run dev`.
 
 ## 5. API Key Setup
 
+### Local development
 - File: `.env.local` in project root (gitignored — never committed)
 - Variable: `ANTHROPIC_API_KEY` (no `VITE_` prefix — key never goes to browser)
 - Key is injected by `vite.config.ts` via `proxy.on('proxyReq')` using `fs.readFileSync`
-- If key changes, just update `.env.local` and restart the dev server
 - Template: `.env.local.example` is committed and safe to share
+
+### Production (Vercel)
+- Set in Vercel dashboard → Project Settings → Environment Variables
+- Variable name: `ANTHROPIC_API_KEY` — set for Production + Preview + Development
+- Injected at runtime by `api/anthropic/v1/messages.ts` serverless function via `process.env`
+- If key changes: update in Vercel dashboard → redeploy (no cache)
 
 ---
 
@@ -91,10 +101,15 @@ Cynthia/
 ├── DECISIONS.md                    Architecture decisions log
 ├── PLANNING.md                     System design notes
 ├── HANDOVER.md                     This file — session context for new Claude sessions
-├── .gitignore                      Excludes node_modules, dist, .env.local, .DS_Store
-├── vite.config.ts                  Dev server + API proxy (key injection here)
+├── vercel.json                     Vercel build config (buildCommand, outputDirectory, framework)
+├── .gitignore                      Excludes node_modules, dist, .env.local, .DS_Store, .vercel
+├── vite.config.ts                  Dev server + API proxy (key injection in dev)
 ├── .env.local                      ANTHROPIC_API_KEY (gitignored)
 ├── .env.local.example              Safe template (committed)
+├── api/
+│   └── anthropic/
+│       └── v1/
+│           └── messages.ts         Vercel serverless function — proxies to Anthropic, injects key
 └── src/
     ├── App.tsx                     Router setup
     ├── context/
@@ -134,7 +149,8 @@ User
  │                    │
  │                    └── generateSyntheticData(prompt)
  │                         └── POST /api/anthropic/v1/messages
- │                              └── Vite proxy → api.anthropic.com (key injected)
+ │                              ├── DEV:  Vite proxy → api.anthropic.com (key from .env.local)
+ │                              └── PROD: Vercel fn → api.anthropic.com (key from env var)
  │
  └─ Upload path (custom prompt + source CSV + optional schema)
      JobSetup (PHI scan → pass)
@@ -236,37 +252,74 @@ Single flat CSV. All 17 fields per row:
 **URL:** https://github.com/godave81/Cynthia  
 **Visibility:** Private  
 **Branch:** `main`  
-**Commits:**
-- `b7b0a03` — Initial commit — Cynthia v1.0 (Milestones 1–7 complete) — 40 files, 6,871 insertions
-- `2ec3978` — Add README.md with full project documentation
+**Key commits:**
+- `b7b0a03` — Initial commit — Cynthia v1.0 (40 files, 6,871 insertions)
+- `2ec3978` — Add README.md
+- `6349aa6` — Update HANDOVER.md
+- `12203e2` — Add Vercel deployment config and serverless API proxy
 
-**What is committed:** All source files, config, and docs  
-**What is gitignored:** `.env.local` (API key), `node_modules/`, `dist/`, `.DS_Store`
+**What is committed:** All source files, config, docs, and `api/` serverless function  
+**What is gitignored:** `.env.local`, `node_modules/`, `dist/`, `.DS_Store`, `.vercel/`
 
 **Git tooling:** GitHub CLI (`gh`) installed at `/opt/homebrew/bin/gh` via Homebrew. Authenticated as `godave81`.
 
 **To push future changes:**
 ```bash
-# From the project directory (use Python subprocess for iCloud path):
 git add <files>
 git commit -m "your message"
-git push origin main
+git push origin main   # triggers auto-deploy on Vercel
 ```
 
 ---
 
-## 12. Known Constraints / Gotchas
+## 12. Vercel Deployment
 
-1. **iCloud path** — always use Python `os.walk` to resolve project path; bash `cd` unreliable
-2. **API key** — in `.env.local` as `ANTHROPIC_API_KEY` (no VITE_ prefix). Restart dev server after any key change
-3. **Token limit** — `max_tokens: 4096` in `generator.ts` for the API call. For large row counts the AI makes multiple implicit chunks in a single call — if responses are truncated, increase `max_tokens` to 8192
-4. **No backend** — all processing is client-side (PapaParse, PHI scan, profiler, scorer, integrity fix). API calls go through Vite proxy
-5. **Row count for generation** — the AI generates all rows in a single API call. Practical limit before truncation is around 50–100 rows per call with the current prompt length. For production use of large counts (5k+), a streaming/batching architecture would be needed
-6. **No persistence** — job state lives in React context (in-memory). Refreshing the page resets everything
+**Live URL:** https://cynthia-godave81-s-projects.vercel.app  
+**Platform:** Vercel (Hobby or Pro — see timeout note below)  
+**Auto-deploy:** Every push to `main` on GitHub triggers a new production deployment  
+
+**Production smoke test results (2026-05-31):**
+- Frontend loads: ✅ 200 OK
+- API proxy + key injection: ✅ confirmed
+- Scope refusal (pharmacy): ✅ correct JSON refusal returned
+- End-to-end generation: ✅ 3 claims, CLM-SYN IDs, dates in 2025–2026
+
+**How the API proxy works in production:**
+- Client POSTs to `/api/anthropic/v1/messages` (no API key in request)
+- `api/anthropic/v1/messages.ts` serverless function runs on Vercel Node.js runtime
+- Function reads `ANTHROPIC_API_KEY` from `process.env` and forwards to `api.anthropic.com`
+- Response returned to client — key never touches the browser
+
+**Environment variable:**
+- Name: `ANTHROPIC_API_KEY`
+- Set in: Vercel dashboard → Project Settings → Environment Variables → Production + Preview + Development
+- To update: change value in dashboard → Deployments → Redeploy (no cache)
+
+**⚠️ Vercel function timeout:**
+- Hobby plan: 10-second hard limit — will timeout on most real generations (Anthropic calls take 15–60s+)
+- Pro plan ($20/mo): up to 300 seconds — `maxDuration: 300` is already set in the function config
+- For production use with real row counts, Pro plan is required
+
+**To redeploy manually:**
+- Vercel dashboard → Deployments → ••• on latest → Redeploy (uncheck "Use Build Cache")
+- Or: push any commit to `main` on GitHub
 
 ---
 
-## 13. What Could Come Next (not started)
+## 13. Known Constraints / Gotchas
+
+1. **iCloud path** — always use Python `os.walk` to resolve project path; bash `cd` unreliable
+2. **API key (dev)** — in `.env.local` as `ANTHROPIC_API_KEY` (no VITE_ prefix). Restart dev server after any key change
+3. **API key (prod)** — in Vercel env vars. Must redeploy (no cache) after any change
+4. **Token limit** — `max_tokens: 4096` in `generator.ts`. If responses truncate, increase to 8192
+5. **No backend** — all processing is client-side. API calls go through Vite proxy (dev) or Vercel function (prod)
+6. **Row count for generation** — practical limit ~50–100 rows per single API call before truncation. For 5k+ rows, a streaming/batching architecture is needed
+7. **No persistence** — job state lives in React context (in-memory). Refreshing the page resets everything
+8. **Vercel Hobby timeout** — 10s limit will break most real generations; Pro plan required for production use
+
+---
+
+## 14. What Could Come Next (not started)
 
 Per PRD, future milestones could include:
 - Supabase integration (job history persistence)
@@ -274,19 +327,21 @@ Per PRD, future milestones could include:
 - User authentication
 - Observability / logging (PRD Section 9)
 - Batch job queue
+- Custom domain for Vercel deployment
 
 No work has started on any of these.
 
 ---
 
-## 14. How to Start a New Claude Session
+## 15. How to Start a New Claude Session
 
 1. Open Claude Code in the Cynthia project directory, or share this file
 2. Say: *"Read HANDOVER.md and continue working on Cynthia"*
 3. Claude should re-read `CLAUDE.md`, `TASKS.md`, and `PRD.md` for live state
-4. Dev server: run `npm run dev` from the project directory (port 3456)
-5. GitHub repo: https://github.com/godave81/Cynthia
+4. Dev server: `npm run dev` (port 3456)
+5. GitHub: https://github.com/godave81/Cynthia
+6. Live app: https://cynthia-godave81-s-projects.vercel.app
 
 ---
 
-*Updated 2026-05-31 — GitHub push + README added*
+*Updated 2026-05-31 — Vercel deployment complete, production smoke tests passing*
