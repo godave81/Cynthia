@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useJob } from '../context/JobContext'
-import { generateSyntheticData, validateOutput, buildUploadPathPrompt } from '../utils/generator'
+import { generateSyntheticData, generateSyntheticDataBatched, BATCH_SIZE, validateOutput, buildUploadPathPrompt } from '../utils/generator'
 import { buildConsolidatedCsv } from '../utils/csvBuilder'
 import { calculatePrivacyScore } from '../utils/privacyScore'
 import { profileData } from '../utils/statisticalProfiler'
@@ -28,6 +28,7 @@ export default function GenerationProgress() {
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [timedOut, setTimedOut] = useState(false)
+  const [batchInfo, setBatchInfo] = useState<{ current: number; total: number } | null>(null)
   const hasStarted = useRef(false)
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -76,48 +77,63 @@ export default function GenerationProgress() {
       return
     }
 
-    generateSyntheticData(prompt)
-      .then(dataset => {
-        clearInterval(progressTimer)
-        clearInterval(stepTimer)
-        clearTimeout(timeoutTimer)
-        setStepIdx(STEPS.length - 1)
-        setProgress(100)
+    // Shared success handler
+    const handleDataset = (dataset: Awaited<ReturnType<typeof generateSyntheticData>>) => {
+      clearInterval(progressTimer)
+      clearInterval(stepTimer)
+      clearTimeout(timeoutTimer)
+      setStepIdx(STEPS.length - 1)
+      setProgress(100)
 
-        // Integrity check — fix in-memory if violations found (targeted fix, no second API call)
-        const preCheckResult = validateIntegrity(dataset.rows)
-        let finalRows = dataset.rows
-        let integrityResult = preCheckResult
-        if (!preCheckResult.passed) {
-          const fixed = fixIntegrityViolations(dataset.rows)
-          finalRows = fixed.rows
-          // Re-validate after fix — should pass
-          const postCheck = validateIntegrity(finalRows)
-          integrityResult = { ...postCheck, fixedCount: fixed.fixedCount }
-        }
-        const finalDataset = { rows: finalRows }
+      // Integrity check — fix in-memory if violations found (targeted fix, no second API call)
+      const preCheckResult = validateIntegrity(dataset.rows)
+      let finalRows = dataset.rows
+      let integrityResult = preCheckResult
+      if (!preCheckResult.passed) {
+        const fixed = fixIntegrityViolations(dataset.rows)
+        finalRows = fixed.rows
+        // Re-validate after fix — should pass
+        const postCheck = validateIntegrity(finalRows)
+        integrityResult = { ...postCheck, fixedCount: fixed.fixedCount }
+      }
+      const finalDataset = { rows: finalRows }
 
-        const issues = validateOutput(finalDataset)
-        const privacyScore = calculatePrivacyScore(issues)
-        const csvData = buildConsolidatedCsv(finalDataset)
+      const issues = validateOutput(finalDataset)
+      const privacyScore = calculatePrivacyScore(issues)
+      const csvData = buildConsolidatedCsv(finalDataset)
 
-        // Compute similarity score if source data was uploaded
-        const similarityScore =
-          !noUpload && job.sourceRows && job.sourceHeaders && job.sourceRows.length >= 2
-            ? calculateSimilarityScore(job.sourceRows, job.sourceHeaders, finalDataset.rows)
-            : null
+      // Compute similarity score if source data was uploaded
+      const similarityScore =
+        !noUpload && job.sourceRows && job.sourceHeaders && job.sourceRows.length >= 2
+          ? calculateSimilarityScore(job.sourceRows, job.sourceHeaders, finalDataset.rows)
+          : null
 
-        updateJob({ generatedData: finalDataset, privacyScore, similarityScore, integrityResult, csvData, generationError: null })
-        setTimeout(() => navigate('/jobs/report'), 800)
-      })
-      .catch((err: unknown) => {
-        clearInterval(progressTimer)
-        clearInterval(stepTimer)
-        clearTimeout(timeoutTimer)
-        const msg = err instanceof Error ? err.message : 'Generation failed. Please try again.'
-        setError(msg)
-        updateJob({ generationError: msg })
-      })
+      updateJob({ generatedData: finalDataset, privacyScore, similarityScore, integrityResult, csvData, generationError: null })
+      setTimeout(() => navigate('/jobs/report'), 800)
+    }
+
+    const handleError = (err: unknown) => {
+      clearInterval(progressTimer)
+      clearInterval(stepTimer)
+      clearTimeout(timeoutTimer)
+      const msg = err instanceof Error ? err.message : 'Generation failed. Please try again.'
+      setError(msg)
+      updateJob({ generationError: msg })
+    }
+
+    // Choose single-call or batched generation
+    const rowCount = job.rowCount || 1000
+    if (!noUpload && rowCount > BATCH_SIZE) {
+      // Batched path — stop fake-progress timers; real progress comes from the callback
+      clearInterval(progressTimer)
+      clearInterval(stepTimer)
+      generateSyntheticDataBatched(prompt, rowCount, (completed, total) => {
+        setBatchInfo({ current: completed, total })
+        setProgress(Math.round((completed / total) * 100))
+      }).then(handleDataset).catch(handleError)
+    } else {
+      generateSyntheticData(prompt).then(handleDataset).catch(handleError)
+    }
 
     return () => {
       clearInterval(progressTimer)
@@ -231,14 +247,24 @@ export default function GenerationProgress() {
 
         <div className="bg-surface border border-border rounded-xl p-8">
           <div className="mb-8">
-            <p className="text-sm font-medium text-primary mb-3">{STEPS[stepIdx]}</p>
+            <p className="text-sm font-medium text-primary mb-3">
+            {batchInfo
+              ? `Generating batch ${batchInfo.current} of ${batchInfo.total}…`
+              : STEPS[stepIdx]
+            }
+          </p>
             <div className="w-full bg-border rounded-full h-2">
               <div
                 className="bg-accent h-2 rounded-full transition-all duration-300"
                 style={{ width: `${Math.round(progress)}%` }}
               />
             </div>
-            <p className="text-xs text-secondary mt-2">{Math.round(progress)}% complete</p>
+            <p className="text-xs text-secondary mt-2">
+              {batchInfo
+                ? `Batch ${batchInfo.current} of ${batchInfo.total} — ${Math.round(progress)}% complete`
+                : `${Math.round(progress)}% complete`
+              }
+            </p>
           </div>
 
           <div className="space-y-2 max-w-sm mx-auto">

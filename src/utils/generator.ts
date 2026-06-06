@@ -56,12 +56,12 @@ export async function generateSyntheticData(prompt: string): Promise<GeneratedDa
       },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: 4096,
+        max_tokens: 8192,
         system: SYSTEM_PROMPT,
         messages: [
           {
             role: 'user',
-            content: `${prompt}\n\nRespond with only the JSON structure. No prose or explanation.`,
+            content: `${prompt}\n\nCRITICAL: Respond with ONLY the JSON structure. Do NOT ask any questions. Do NOT add any prose or explanation. Generate immediately.`,
           },
         ],
       }),
@@ -194,6 +194,38 @@ export function validateOutput(dataset: GeneratedDataset): ValidationIssue[] {
   })
 
   return issues
+}
+
+// ---------------------------------------------------------------------------
+// Batched generation (for large row counts)
+// ---------------------------------------------------------------------------
+
+export const BATCH_SIZE = 50
+
+export async function generateSyntheticDataBatched(
+  fullPrompt: string,
+  totalRows: number,
+  onBatch: (completed: number, total: number) => void,
+): Promise<GeneratedDataset> {
+  const numBatches = Math.ceil(totalRows / BATCH_SIZE)
+  const allRows: SyntheticRow[] = []
+
+  for (let i = 0; i < numBatches; i++) {
+    const batchSize = Math.min(BATCH_SIZE, totalRows - i * BATCH_SIZE)
+    const offset = i * BATCH_SIZE
+
+    // Replace the row count in the prompt with this batch's count, and
+    // add a ClaimID offset so IDs are unique across batches.
+    const batchPrompt =
+      fullPrompt.replace(/^Generate \d+ /, `Generate ${batchSize} `) +
+      `\nClaimID sequence must start at CLM-SYN-${String(offset + 1).padStart(7, '0')} for this batch.`
+
+    const result = await generateSyntheticData(batchPrompt)
+    allRows.push(...result.rows)
+    onBatch(i + 1, numBatches)
+  }
+
+  return { rows: allRows }
 }
 
 // ---------------------------------------------------------------------------

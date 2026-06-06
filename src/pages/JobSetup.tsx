@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import Papa from 'papaparse'
 import { useJob } from '../context/JobContext'
@@ -19,6 +20,7 @@ const PREDEFINED_PROMPTS = [
 export default function JobSetup() {
   const navigate = useNavigate()
   const { job, updateJob, resetJob } = useJob()
+  const [rowCount, setRowCount] = useState<string>(String(job.rowCount || 1000))
 
   // ── Source CSV upload ──────────────────────────────────────────────────────
   async function handleSourceFile(file: File) {
@@ -114,8 +116,9 @@ export default function JobSetup() {
 
   // ── Continue (upload path) ─────────────────────────────────────────────────
   function handleContinue() {
-    updateJob({ noUpload: false })
-    navigate('/jobs/new/configure')
+    const rc = parseInt(rowCount, 10)
+    updateJob({ noUpload: false, rowCount: isNaN(rc) ? 1000 : rc })
+    navigate('/jobs/processing')
   }
 
   // ── Continue button state ──────────────────────────────────────────────────
@@ -123,7 +126,10 @@ export default function JobSetup() {
   const phiOk = job.sourceFile === null
     ? true                          // nothing uploaded — nothing to block
     : !job.phi.scanning && job.phi.passed
-  const canContinue = hasPrompt && phiOk
+  const rowCountNum = parseInt(rowCount, 10)
+  const rowCountOver = !isNaN(rowCountNum) && rowCountNum > 100_000
+  const rowCountValid = rowCount.trim() !== '' && !isNaN(rowCountNum) && rowCountNum >= 1 && !rowCountOver
+  const canContinue = hasPrompt && phiOk && rowCountValid
 
   // ── PHI status panel ──────────────────────────────────────────────────────
   function PhiStatus() {
@@ -185,7 +191,7 @@ export default function JobSetup() {
       </header>
 
       <main className="max-w-3xl mx-auto px-10 py-8">
-        <StepIndicator step={1} total={3} label="Describe & Upload" />
+        <StepIndicator step={1} total={2} label="Describe & Upload" />
 
         <h1 className="text-2xl font-semibold text-primary mb-2">Describe What You Need</h1>
         <p className="text-sm text-secondary mb-8">
@@ -203,6 +209,27 @@ export default function JobSetup() {
             className="w-full border border-border rounded-lg px-4 py-3 text-sm text-primary placeholder-secondary focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent resize-none"
           />
           <p className="text-xs text-secondary mt-1 text-right">{job.prompt.length} characters</p>
+        </div>
+
+
+        {/* Row count */}
+        <div className="mb-8">
+          <label className="block text-sm font-medium text-primary mb-2">Records to Generate</label>
+          <input
+            type="number"
+            value={rowCount}
+            onChange={e => setRowCount(e.target.value)}
+            min={1}
+            max={100000}
+            className={[
+              'w-48 border rounded-lg px-4 py-2.5 text-sm text-primary focus:outline-none focus:ring-2 focus:border-transparent',
+              rowCountOver ? 'border-error focus:ring-error' : 'border-border focus:ring-accent',
+            ].join(' ')}
+          />
+          {rowCountOver && (
+            <p className="text-xs text-error mt-1.5">Maximum is 100,000 records.</p>
+          )}
+          <p className="text-xs text-secondary mt-1">Max 100,000 · Large volumes will generate in batches</p>
         </div>
 
         {/* Predefined prompts */}
