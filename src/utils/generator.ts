@@ -94,11 +94,21 @@ export async function generateSyntheticData(prompt: string): Promise<GeneratedDa
 // ---------------------------------------------------------------------------
 
 function parseResponse(raw: string, originalPrompt: string): GeneratedDataset {
-  const text = raw
-    .replace(/^```json\s*/i, '')
-    .replace(/^```\s*/i, '')
-    .replace(/\s*```$/i, '')
-    .trim()
+  // Robustly extract the JSON object regardless of code fences or surrounding text.
+  // Strategy: find the first { and last } and parse that slice.
+  let text = raw.trim()
+
+  const firstBrace = text.indexOf('{')
+  const lastBrace  = text.lastIndexOf('}')
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    text = text.slice(firstBrace, lastBrace + 1)
+  } else {
+    // Fallback: strip code fences the old way
+    text = text
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```$/i, '')
+      .trim()
+  }
 
   let data: unknown
   try {
@@ -200,7 +210,7 @@ export function validateOutput(dataset: GeneratedDataset): ValidationIssue[] {
 // Batched generation (for large row counts)
 // ---------------------------------------------------------------------------
 
-export const BATCH_SIZE = 50
+export const BATCH_SIZE = 25
 
 export async function generateSyntheticDataBatched(
   fullPrompt: string,
