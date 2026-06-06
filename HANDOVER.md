@@ -1,7 +1,7 @@
 # HANDOVER.md — Cynthia Project
 
-**Date:** 2026-05-31  
-**Status:** All 7 milestones complete. Deployed to production.  
+**Date:** 2026-06-05  
+**Status:** All 7 milestones complete. Deployed to production. Landing page live.  
 **GitHub:** https://github.com/godave81/Cynthia (private)  
 **Live app:** https://cynthia-godave81-s-projects.vercel.app  
 **Session history:** Full transcript at `/Users/davidmunoz/.claude/projects/-Users-davidmunoz-Documents-Documents---David-s-MacBook-Air-JUSTANOTHERPM-aipm-main/`
@@ -61,13 +61,9 @@ Always write files via Python subprocess with `sys.argv[1]` or use `open(path, '
 npm run dev
 ```
 
-Or via Python subprocess to handle iCloud path:
-```python
-import subprocess
-subprocess.Popen(['npm', 'run', 'dev'], cwd=project)
-```
-
 - Dev server: `http://localhost:3456`
+- Landing page: `http://localhost:3456/`
+- App: `http://localhost:3456/app`
 - Proxy: all requests to `/api/anthropic/*` → `https://api.anthropic.com/*` with API key injected server-side via `vite.config.ts`
 
 **TypeScript check:** `npx tsc --noEmit` (run from project root) — should be clean.
@@ -86,7 +82,7 @@ subprocess.Popen(['npm', 'run', 'dev'], cwd=project)
 - Set in Vercel dashboard → Project Settings → Environment Variables
 - Variable name: `ANTHROPIC_API_KEY` — set for Production + Preview + Development
 - Injected at runtime by `api/anthropic/v1/messages.ts` serverless function via `process.env`
-- If key changes: update in Vercel dashboard → redeploy (no cache)
+- If key changes: update in Vercel dashboard → Deployments → Redeploy (no cache)
 
 ---
 
@@ -111,11 +107,12 @@ Cynthia/
 │       └── v1/
 │           └── messages.ts         Vercel serverless function — proxies to Anthropic, injects key
 └── src/
-    ├── App.tsx                     Router setup
+    ├── App.tsx                     Router: / → Landing, /app → Dashboard, /jobs/* → app screens
     ├── context/
     │   └── JobContext.tsx          Global job state (prompt, files, scores, results)
     ├── pages/
-    │   ├── Dashboard.tsx           Screen 1 — home, recent jobs list
+    │   ├── Landing.tsx             Marketing landing page (/ route) — for demos
+    │   ├── Dashboard.tsx           Screen 1 — home, recent jobs list (/app route)
     │   ├── JobSetup.tsx            Screen 2 — prompt entry, file uploads, PHI scan
     │   ├── SchemaReview.tsx        Screen 3 — schema table, row count, generate button
     │   ├── GenerationProgress.tsx  Screen 4 — progress bar, API call, integrity fix
@@ -139,7 +136,26 @@ Cynthia/
 
 ---
 
-## 7. Data Flow
+## 7. Routing
+
+| URL | Component | Notes |
+|---|---|---|
+| `/` | `Landing.tsx` | Public-facing marketing/demo page |
+| `/app` | `Dashboard.tsx` | App home — recent jobs, new job button |
+| `/jobs/new` | `JobSetup.tsx` | Prompt entry + file upload |
+| `/jobs/new/configure` | `SchemaReview.tsx` | Schema review + row count |
+| `/jobs/processing` | `GenerationProgress.tsx` | Generation in progress |
+| `/jobs/report` | `ComplianceReport.tsx` | Scores + download |
+
+**Navigation links:**
+- Landing "Launch App →" → `/app`
+- Dashboard logo → `/` (landing)
+- ComplianceReport "Back to Dashboard" → `/app`
+- Dashboard "New Generation Job" → `/jobs/new`
+
+---
+
+## 8. Data Flow
 
 ```
 User
@@ -167,7 +183,7 @@ User
 
 ---
 
-## 8. Output Format
+## 9. Output Format
 
 Single flat CSV. All 17 fields per row:
 
@@ -193,7 +209,7 @@ Single flat CSV. All 17 fields per row:
 
 ---
 
-## 9. Key Behaviors to Know
+## 10. Key Behaviors to Know
 
 **PHI Scanner** (`phiScanner.ts`):
 - Runs on source CSV BEFORE processing (upload path only)
@@ -226,7 +242,7 @@ Single flat CSV. All 17 fields per row:
 
 ---
 
-## 10. Milestone Status
+## 11. Milestone Status
 
 | # | Milestone | Status |
 |---|---|---|
@@ -247,16 +263,18 @@ Single flat CSV. All 17 fields per row:
 
 ---
 
-## 11. GitHub Repository
+## 12. GitHub Repository
 
 **URL:** https://github.com/godave81/Cynthia  
 **Visibility:** Private  
 **Branch:** `main`  
 **Key commits:**
-- `b7b0a03` — Initial commit — Cynthia v1.0 (40 files, 6,871 insertions)
+- `b7b0a03` — Initial commit — Cynthia v1.0 (40 files)
 - `2ec3978` — Add README.md
 - `6349aa6` — Update HANDOVER.md
 - `12203e2` — Add Vercel deployment config and serverless API proxy
+- `a5d3634` — Update HANDOVER.md (Vercel section)
+- `7dc525b` — Add landing page for product demo
 
 **What is committed:** All source files, config, docs, and `api/` serverless function  
 **What is gitignored:** `.env.local`, `node_modules/`, `dist/`, `.DS_Store`, `.vercel/`
@@ -272,10 +290,10 @@ git push origin main   # triggers auto-deploy on Vercel
 
 ---
 
-## 12. Vercel Deployment
+## 13. Vercel Deployment
 
 **Live URL:** https://cynthia-godave81-s-projects.vercel.app  
-**Platform:** Vercel (Hobby or Pro — see timeout note below)  
+**Platform:** Vercel  
 **Auto-deploy:** Every push to `main` on GitHub triggers a new production deployment  
 
 **Production smoke test results (2026-05-31):**
@@ -301,12 +319,31 @@ git push origin main   # triggers auto-deploy on Vercel
 - For production use with real row counts, Pro plan is required
 
 **To redeploy manually:**
-- Vercel dashboard → Deployments → ••• on latest → Redeploy (uncheck "Use Build Cache")
-- Or: push any commit to `main` on GitHub
+- Push any commit to `main` on GitHub (recommended)
+- Or: Vercel dashboard → Deployments → ••• on latest → Redeploy (uncheck "Use Build Cache")
 
 ---
 
-## 13. Known Constraints / Gotchas
+## 14. Landing Page
+
+**URL:** https://cynthia-godave81-s-projects.vercel.app/  
+**File:** `src/pages/Landing.tsx`  
+**Purpose:** Product demo and internal stakeholder intro page  
+
+**Sections:**
+1. **Nav** — dark bar, Cynthia logo + "Launch App →" CTA
+2. **Hero** — dark background, headline "Synthetic Healthcare Data. Without the Wait.", stats bar (17/17 tests, 18 HIPAA identifiers, 100k rows)
+3. **Problem** — 3 pain cards: weeks of legal review, Excel fabrication, compliance risk
+4. **How it works** — 3 numbered steps: prompt → upload → download
+5. **Features** — 4 safeguard cards: PHI Scanner, Statistical Profiler, Referential Integrity, Compliance Report
+6. **CTA** — "Ready to generate?" + Launch button
+7. **Footer** — "Internal Tool · HIPAA-safe · Zero PHI"
+
+**Demo flow:** Share landing URL → show stakeholders the product story → click "Launch App →" → live demo of the generation workflow.
+
+---
+
+## 15. Known Constraints / Gotchas
 
 1. **iCloud path** — always use Python `os.walk` to resolve project path; bash `cd` unreliable
 2. **API key (dev)** — in `.env.local` as `ANTHROPIC_API_KEY` (no VITE_ prefix). Restart dev server after any key change
@@ -319,7 +356,7 @@ git push origin main   # triggers auto-deploy on Vercel
 
 ---
 
-## 14. What Could Come Next (not started)
+## 16. What Could Come Next (not started)
 
 Per PRD, future milestones could include:
 - Supabase integration (job history persistence)
@@ -333,15 +370,15 @@ No work has started on any of these.
 
 ---
 
-## 15. How to Start a New Claude Session
+## 17. How to Start a New Claude Session
 
 1. Open Claude Code in the Cynthia project directory, or share this file
 2. Say: *"Read HANDOVER.md and continue working on Cynthia"*
 3. Claude should re-read `CLAUDE.md`, `TASKS.md`, and `PRD.md` for live state
-4. Dev server: `npm run dev` (port 3456)
+4. Dev server: `npm run dev` (port 3456) — landing at `/`, app at `/app`
 5. GitHub: https://github.com/godave81/Cynthia
 6. Live app: https://cynthia-godave81-s-projects.vercel.app
 
 ---
 
-*Updated 2026-05-31 — Vercel deployment complete, production smoke tests passing*
+*Updated 2026-06-05 — Landing page added for product demo*
