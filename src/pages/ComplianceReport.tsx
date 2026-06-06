@@ -101,7 +101,7 @@ export default function ComplianceReport() {
               {job.prompt ? `"${job.prompt.slice(0, 80)}${job.prompt.length > 80 ? '\u2026' : ''}"` : 'Synthetic data ready'}
             </p>
           </div>
-          <Link to="/" className="text-sm text-secondary hover:text-primary transition-colors">Back to Dashboard</Link>
+          <Link to="/app" className="text-sm text-secondary hover:text-primary transition-colors">Back to Dashboard</Link>
         </div>
       </header>
 

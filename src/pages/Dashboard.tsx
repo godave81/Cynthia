@@ -16,13 +16,13 @@ export default function Dashboard() {
       {/* Header */}
       <header className="bg-surface border-b border-border">
         <div className="max-w-5xl mx-auto px-10 py-6 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <a href="/" className="flex items-center gap-3 no-underline">
             <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center">
               <span className="text-white text-xs font-bold">C</span>
             </div>
             <span className="text-lg font-semibold text-primary">Cynthia</span>
             <span className="text-xs text-secondary border border-border rounded px-2 py-0.5 ml-1">Healthcare Synthetic Data</span>
-          </div>
+          </a>
           <button
             onClick={() => navigate('/jobs/new')}
             className="bg-accent hover:bg-accent-hover text-white text-sm font-medium px-6 py-2.5 rounded-lg transition-colors"
