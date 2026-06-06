@@ -264,6 +264,11 @@ export default function GenerationProgress() {
               : STEPS[stepIdx]
             }
           </p>
+          {batchInfo && batchInfo.total > 1 && (
+            <p className="text-xs text-secondary mt-1">
+              Batches run sequentially to stay within API rate limits.
+            </p>
+          )}
             <div className="w-full bg-border rounded-full h-2">
               <div
                 className="bg-accent h-2 rounded-full transition-all duration-300"

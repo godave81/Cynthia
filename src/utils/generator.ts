@@ -32,6 +32,7 @@ export interface ValidationIssue {
 export async function generateSyntheticData(
   prompt: string,
   systemOverride?: string,
+  _retries = 3,
 ): Promise<GeneratedDataset> {
   let response: Response
   try {
@@ -61,6 +62,15 @@ export async function generateSyntheticData(
 
   if (response.status === 401) {
     throw new Error('API key rejected by Anthropic. Check that ANTHROPIC_API_KEY in .env.local is set and the dev server was restarted.')
+  }
+
+  // Retry on 429 rate-limit with a 35-second back-off
+  if (response.status === 429) {
+    if (_retries > 0) {
+      await new Promise(r => setTimeout(r, 35_000))
+      return generateSyntheticData(prompt, systemOverride, _retries - 1)
+    }
+    throw new Error('Rate limit (429): too many tokens per minute. Your API key is on a restricted plan. Reduce volume or wait a minute and retry.')
   }
 
   if (!response.ok) {
@@ -188,11 +198,11 @@ export function validateOutput(dataset: GeneratedDataset): ValidationIssue[] {
 // Batched generation (for large row counts)
 // ---------------------------------------------------------------------------
 
-export const BATCH_SIZE = 25
+export const BATCH_SIZE = 10
 
 // Max parallel API calls. 4 keeps us well within Anthropic rate limits while
 // cutting wall-clock time by ~4× for typical job sizes (200–1000 rows).
-const MAX_CONCURRENCY = 4
+const INTER_BATCH_DELAY_MS = 5000  // 5 s inter-batch gap keeps output well under 8 k tok/min
 
 export async function generateSyntheticDataBatched(
   fullPrompt: string,
@@ -222,13 +232,13 @@ export async function generateSyntheticDataBatched(
     onBatch(completedCount, numBatches)
   }
 
-  // Process in parallel windows of MAX_CONCURRENCY
-  for (let start = 0; start < numBatches; start += MAX_CONCURRENCY) {
-    const window = Array.from(
-      { length: Math.min(MAX_CONCURRENCY, numBatches - start) },
-      (_, j) => runBatch(start + j),
-    )
-    await Promise.all(window)
+  // Sequential with inter-batch pacing to stay under the tokens-per-minute limit.
+  // MAX_CONCURRENCY is kept at 1 to avoid rate-limit 429s on restricted API keys.
+  for (let i = 0; i < numBatches; i++) {
+    await runBatch(i)
+    if (i < numBatches - 1) {
+      await new Promise(r => setTimeout(r, INTER_BATCH_DELAY_MS))
+    }
   }
 
   return { rows: batchResults.flat() }
