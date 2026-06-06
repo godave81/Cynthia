@@ -212,30 +212,47 @@ export function validateOutput(dataset: GeneratedDataset): ValidationIssue[] {
 
 export const BATCH_SIZE = 25
 
+// Max parallel API calls. 4 keeps us well within Anthropic rate limits while
+// cutting wall-clock time by ~4× for typical job sizes (200–1000 rows).
+const MAX_CONCURRENCY = 4
+
 export async function generateSyntheticDataBatched(
   fullPrompt: string,
   totalRows: number,
   onBatch: (completed: number, total: number) => void,
 ): Promise<GeneratedDataset> {
   const numBatches = Math.ceil(totalRows / BATCH_SIZE)
-  const allRows: SyntheticRow[] = []
+  // Pre-allocate result slots so we can fill them out-of-order and still
+  // return rows in the correct sequence.
+  const batchResults: SyntheticRow[][] = new Array(numBatches)
+  let completedCount = 0
 
-  for (let i = 0; i < numBatches; i++) {
+  function makeBatchPrompt(i: number): string {
     const batchSize = Math.min(BATCH_SIZE, totalRows - i * BATCH_SIZE)
     const offset = i * BATCH_SIZE
-
-    // Replace the row count in the prompt with this batch's count, and
-    // add a ClaimID offset so IDs are unique across batches.
-    const batchPrompt =
+    return (
       fullPrompt.replace(/^Generate \d+ /, `Generate ${batchSize} `) +
       `\nClaimID sequence must start at CLM-SYN-${String(offset + 1).padStart(7, '0')} for this batch.`
-
-    const result = await generateSyntheticData(batchPrompt)
-    allRows.push(...result.rows)
-    onBatch(i + 1, numBatches)
+    )
   }
 
-  return { rows: allRows }
+  async function runBatch(i: number): Promise<void> {
+    const result = await generateSyntheticData(makeBatchPrompt(i))
+    batchResults[i] = result.rows
+    completedCount++
+    onBatch(completedCount, numBatches)
+  }
+
+  // Process in parallel windows of MAX_CONCURRENCY
+  for (let start = 0; start < numBatches; start += MAX_CONCURRENCY) {
+    const window = Array.from(
+      { length: Math.min(MAX_CONCURRENCY, numBatches - start) },
+      (_, j) => runBatch(start + j),
+    )
+    await Promise.all(window)
+  }
+
+  return { rows: batchResults.flat() }
 }
 
 // ---------------------------------------------------------------------------
