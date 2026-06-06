@@ -11,25 +11,9 @@ const API_URL = '/api/anthropic/v1/messages'
 // Types
 // ---------------------------------------------------------------------------
 
-export interface SyntheticRow {
-  ClaimID: string
-  ProviderID: string
-  FacilityName: string
-  ProviderType: string
-  Specialty: string
-  ProviderState: string
-  ProviderZipCode: string
-  MemberID: string
-  DateOfBirth: string
-  Gender: string
-  MemberState: string
-  MemberZipCode: string
-  InsuranceType: string
-  DateOfService: string
-  HCPCSCode: string
-  BilledAmount: string
-  ClaimStatus: string
-}
+// Flexible row type — supports both the fixed 17-column schema (predefined prompts)
+// and dynamic schemas derived from an uploaded source file.
+export type SyntheticRow = Record<string, string>
 
 export interface GeneratedDataset {
   rows: SyntheticRow[]
@@ -45,7 +29,10 @@ export interface ValidationIssue {
 // API call
 // ---------------------------------------------------------------------------
 
-export async function generateSyntheticData(prompt: string): Promise<GeneratedDataset> {
+export async function generateSyntheticData(
+  prompt: string,
+  systemOverride?: string,
+): Promise<GeneratedDataset> {
   let response: Response
   try {
     response = await fetch(API_URL, {
@@ -57,7 +44,7 @@ export async function generateSyntheticData(prompt: string): Promise<GeneratedDa
       body: JSON.stringify({
         model: MODEL,
         max_tokens: 8192,
-        system: SYSTEM_PROMPT,
+        system: systemOverride ?? SYSTEM_PROMPT,
         messages: [
           {
             role: 'user',
@@ -136,30 +123,14 @@ function parseResponse(raw: string, originalPrompt: string): GeneratedDataset {
     throw new Error(`Response missing "rows" array. Prompt was: "${originalPrompt.slice(0, 100)}"`)
   }
 
+  // Dynamically map every key Claude returned — supports both fixed and source schemas.
   const rows: SyntheticRow[] = (obj.rows as unknown[]).map((item, i) => {
     if (typeof item !== 'object' || item === null) {
       throw new Error(`Row ${i} is not an object`)
     }
-    const r = item as Record<string, unknown>
-    return {
-      ClaimID:         String(r.ClaimID         ?? ''),
-      ProviderID:      String(r.ProviderID       ?? ''),
-      FacilityName:    String(r.FacilityName     ?? ''),
-      ProviderType:    String(r.ProviderType     ?? ''),
-      Specialty:       String(r.Specialty        ?? ''),
-      ProviderState:   String(r.ProviderState    ?? ''),
-      ProviderZipCode: String(r.ProviderZipCode  ?? ''),
-      MemberID:        String(r.MemberID         ?? ''),
-      DateOfBirth:     String(r.DateOfBirth      ?? ''),
-      Gender:          String(r.Gender           ?? ''),
-      MemberState:     String(r.MemberState      ?? ''),
-      MemberZipCode:   String(r.MemberZipCode    ?? ''),
-      InsuranceType:   String(r.InsuranceType    ?? ''),
-      DateOfService:   String(r.DateOfService    ?? ''),
-      HCPCSCode:       String(r.HCPCSCode        ?? ''),
-      BilledAmount:    String(r.BilledAmount      ?? ''),
-      ClaimStatus:     String(r.ClaimStatus      ?? ''),
-    }
+    return Object.fromEntries(
+      Object.entries(item as Record<string, unknown>).map(([k, v]) => [k, String(v ?? '')])
+    )
   })
 
   return { rows }
@@ -178,31 +149,38 @@ const MIN_DATE    = '2025/01/01'
 const MAX_DATE    = '2026/12/31'
 
 export function validateOutput(dataset: GeneratedDataset): ValidationIssue[] {
-  const issues: ValidationIssue[] = []
+  if (dataset.rows.length === 0) return []
 
+  // Only run fixed-schema validation when the dataset uses Cynthia's standard columns.
+  // Dynamic (source-schema) datasets skip this step — privacy score defaults to 95.
+  const keys = new Set(Object.keys(dataset.rows[0]))
+  if (!keys.has('ClaimID') || !keys.has('ProviderID') || !keys.has('MemberID')) {
+    return []
+  }
+
+  const issues: ValidationIssue[] = []
   dataset.rows.forEach((row, i) => {
-    if (!NPI_SYN_RE.test(row.ProviderID)) {
+    if (!NPI_SYN_RE.test(row['ProviderID'] ?? '')) {
       issues.push({ field: `rows[${i}].ProviderID`, type: 'id_format',
-        message: `Invalid NPI-SYN format: ${row.ProviderID}` })
+        message: `Invalid NPI-SYN format: ${row['ProviderID']}` })
     }
-    if (!CMB_SYN_RE.test(row.MemberID)) {
+    if (!CMB_SYN_RE.test(row['MemberID'] ?? '')) {
       issues.push({ field: `rows[${i}].MemberID`, type: 'id_format',
-        message: `Invalid CMB-SYN format: ${row.MemberID}` })
+        message: `Invalid CMB-SYN format: ${row['MemberID']}` })
     }
-    if (!CLM_SYN_RE.test(row.ClaimID)) {
+    if (!CLM_SYN_RE.test(row['ClaimID'] ?? '')) {
       issues.push({ field: `rows[${i}].ClaimID`, type: 'id_format',
-        message: `Invalid CLM-SYN format: ${row.ClaimID}` })
+        message: `Invalid CLM-SYN format: ${row['ClaimID']}` })
     }
-    if (!DATE_RE.test(row.DateOfService) || row.DateOfService < MIN_DATE || row.DateOfService > MAX_DATE) {
+    if (!DATE_RE.test(row['DateOfService'] ?? '') || (row['DateOfService'] ?? '') < MIN_DATE || (row['DateOfService'] ?? '') > MAX_DATE) {
       issues.push({ field: `rows[${i}].DateOfService`, type: 'date_range',
-        message: `Date out of range or wrong format: ${row.DateOfService}` })
+        message: `Date out of range or wrong format: ${row['DateOfService']}` })
     }
-    if (!HCPCS_RE.test(row.HCPCSCode)) {
+    if (!HCPCS_RE.test(row['HCPCSCode'] ?? '')) {
       issues.push({ field: `rows[${i}].HCPCSCode`, type: 'hcpcs_format',
-        message: `Invalid HCPCS format: ${row.HCPCSCode}` })
+        message: `Invalid HCPCS format: ${row['HCPCSCode']}` })
     }
   })
-
   return issues
 }
 
@@ -220,6 +198,7 @@ export async function generateSyntheticDataBatched(
   fullPrompt: string,
   totalRows: number,
   onBatch: (completed: number, total: number) => void,
+  systemOverride?: string,
 ): Promise<GeneratedDataset> {
   const numBatches = Math.ceil(totalRows / BATCH_SIZE)
   // Pre-allocate result slots so we can fill them out-of-order and still
@@ -237,7 +216,7 @@ export async function generateSyntheticDataBatched(
   }
 
   async function runBatch(i: number): Promise<void> {
-    const result = await generateSyntheticData(makeBatchPrompt(i))
+    const result = await generateSyntheticData(makeBatchPrompt(i), systemOverride)
     batchResults[i] = result.rows
     completedCount++
     onBatch(completedCount, numBatches)

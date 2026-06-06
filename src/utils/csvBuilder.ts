@@ -1,27 +1,8 @@
-// Builds the single consolidated flat CSV from generated dataset.
-// Per DECISIONS.md: one file, all Provider + Member + Claims fields per row.
+// Builds the consolidated CSV from a generated dataset.
+// Column headers are derived dynamically from the first row's keys,
+// so the output schema always matches what was generated (fixed or source-schema).
 
-import type { GeneratedDataset, SyntheticRow } from './generator'
-
-const CSV_HEADERS: (keyof SyntheticRow)[] = [
-  'ClaimID',
-  'ProviderID',
-  'FacilityName',
-  'ProviderType',
-  'Specialty',
-  'ProviderState',
-  'ProviderZipCode',
-  'MemberID',
-  'DateOfBirth',
-  'Gender',
-  'MemberState',
-  'MemberZipCode',
-  'InsuranceType',
-  'DateOfService',
-  'HCPCSCode',
-  'BilledAmount',
-  'ClaimStatus',
-]
+import type { GeneratedDataset } from './generator'
 
 function escapeField(value: string): string {
   // RFC 4180: wrap in double-quotes if field contains comma, quote, or newline
@@ -32,9 +13,14 @@ function escapeField(value: string): string {
 }
 
 export function buildConsolidatedCsv(dataset: GeneratedDataset): string {
-  const header = CSV_HEADERS.join(',')
+  if (dataset.rows.length === 0) return ''
+
+  // Use actual column names from the generated data — works for both
+  // Cynthia's fixed 17-column schema and any source-schema output.
+  const headers = Object.keys(dataset.rows[0])
+  const header   = headers.join(',')
   const dataRows = dataset.rows.map(row =>
-    CSV_HEADERS.map(col => escapeField(row[col])).join(',')
+    headers.map(col => escapeField(row[col] ?? '')).join(',')
   )
   return [header, ...dataRows].join('\n')
 }

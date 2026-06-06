@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useJob } from '../context/JobContext'
 import { generateSyntheticData, generateSyntheticDataBatched, BATCH_SIZE, validateOutput, buildUploadPathPrompt } from '../utils/generator'
+import { buildDynamicSystemPrompt } from '../utils/systemPrompt'
 import { buildConsolidatedCsv } from '../utils/csvBuilder'
 import { calculatePrivacyScore } from '../utils/privacyScore'
 import { profileData } from '../utils/statisticalProfiler'
@@ -121,6 +122,16 @@ export default function GenerationProgress() {
       updateJob({ generationError: msg })
     }
 
+    // Build a dynamic system prompt when a source file was uploaded.
+    // This tells Claude to output exactly the source columns instead of the
+    // default 17-column Cynthia schema.
+    const dynamicSystemPrompt = (!noUpload && job.sourceHeaders && job.sourceHeaders.length > 0)
+      ? buildDynamicSystemPrompt(
+          job.sourceHeaders,
+          job.sourceRows?.[0],  // first row as format reference
+        )
+      : undefined
+
     // Choose single-call or batched generation
     const rowCount = job.rowCount || 1000
     if (!noUpload && rowCount > BATCH_SIZE) {
@@ -130,9 +141,9 @@ export default function GenerationProgress() {
       generateSyntheticDataBatched(prompt, rowCount, (completed, total) => {
         setBatchInfo({ current: completed, total })
         setProgress(Math.round((completed / total) * 100))
-      }).then(handleDataset).catch(handleError)
+      }, dynamicSystemPrompt).then(handleDataset).catch(handleError)
     } else {
-      generateSyntheticData(prompt).then(handleDataset).catch(handleError)
+      generateSyntheticData(prompt, dynamicSystemPrompt).then(handleDataset).catch(handleError)
     }
 
     return () => {

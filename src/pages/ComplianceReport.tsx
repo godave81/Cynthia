@@ -3,7 +3,7 @@ import { useJob } from '../context/JobContext'
 import ScoreBadge from '../components/ScoreBadge'
 
 const FALLBACK_SCORE = 91
-const FALLBACK_ROWS = [
+const FALLBACK_ROWS: Record<string, string>[] = [
   { ClaimID: 'CLM-SYN-0000001', ProviderID: 'NPI-SYN-0000012', MemberID: 'CMB-SYN-0000087', DateOfService: '2025/03/14', HCPCSCode: '27447', BilledAmount: '34200.00', ClaimStatus: 'Paid' },
   { ClaimID: 'CLM-SYN-0000002', ProviderID: 'NPI-SYN-0000005', MemberID: 'CMB-SYN-0000203', DateOfService: '2025/04/07', HCPCSCode: '27130', BilledAmount: '28750.00', ClaimStatus: 'Paid' },
   { ClaimID: 'CLM-SYN-0000003', ProviderID: 'NPI-SYN-0000031', MemberID: 'CMB-SYN-0000041', DateOfService: '2025/06/22', HCPCSCode: '29881', BilledAmount: '12450.00', ClaimStatus: 'Paid' },
@@ -74,9 +74,19 @@ export default function ComplianceReport() {
   const simScore = job.similarityScore
   const smallSample = !noUpload && job.sourceFile !== null && (job.sourceFile.rowCount ?? 0) < 50
 
-  const uniqueProviders = hasRealData ? new Set(allRows.map(r => r.ProviderID)).size : (noUpload ? 5 : 50)
-  const uniqueMembers   = hasRealData ? new Set(allRows.map(r => r.MemberID)).size  : (noUpload ? 10 : 10000)
-  const totalClaims     = hasRealData ? allRows.length : (noUpload ? 10 : 10000)
+  // Detect ID columns dynamically — handles both fixed and source-schema datasets
+  const colKeys = allRows.length > 0 ? Object.keys(allRows[0]) : []
+  const normKey = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+  const providerIdCol = colKeys.find(k => normKey(k).includes('provider') && normKey(k).includes('id'))
+  const memberIdCol   = colKeys.find(k => (normKey(k).includes('member') || normKey(k).includes('patient')) && normKey(k).includes('id'))
+
+  const uniqueProviders = hasRealData && providerIdCol
+    ? new Set(allRows.map(r => r[providerIdCol])).size
+    : (noUpload ? 5 : 50)
+  const uniqueMembers = hasRealData && memberIdCol
+    ? new Set(allRows.map(r => r[memberIdCol])).size
+    : (noUpload ? 10 : 10000)
+  const totalClaims   = hasRealData ? allRows.length : (noUpload ? 10 : 10000)
 
   function handleDownload() {
     if (!job.csvData) return
@@ -252,28 +262,42 @@ export default function ComplianceReport() {
             <p className="text-xs text-secondary mt-0.5">First 10 rows of consolidated output</p>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-border bg-background">
-                  {['Claim ID', 'Provider ID', 'Member ID', 'Date of Service', 'HCPCS', 'Billed Amount', 'Status'].map(h => (
-                    <th key={h} className="px-4 py-3 text-left text-xs font-medium text-secondary uppercase tracking-wide whitespace-nowrap">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {sampleRows.map((row, i) => (
-                  <tr key={row.ClaimID || i} className="hover:bg-background transition-colors">
-                    <td className="px-4 py-2.5 text-xs font-mono text-primary whitespace-nowrap">{row.ClaimID}</td>
-                    <td className="px-4 py-2.5 text-xs font-mono text-secondary whitespace-nowrap">{row.ProviderID}</td>
-                    <td className="px-4 py-2.5 text-xs font-mono text-secondary whitespace-nowrap">{row.MemberID}</td>
-                    <td className="px-4 py-2.5 text-xs text-secondary whitespace-nowrap">{row.DateOfService}</td>
-                    <td className="px-4 py-2.5 text-xs font-mono text-primary">{row.HCPCSCode}</td>
-                    <td className="px-4 py-2.5 text-xs text-primary whitespace-nowrap">{fmtAmount(row.BilledAmount)}</td>
-                    <td className="px-4 py-2.5 text-xs text-secondary">{row.ClaimStatus}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {(() => {
+              // Determine table columns: use actual generated columns (dynamic or fixed schema).
+              // Fall back to the 7 fixed columns when showing placeholder data.
+              const tableHeaders: string[] = colKeys.length > 0
+                ? colKeys
+                : ['ClaimID', 'ProviderID', 'MemberID', 'DateOfService', 'HCPCSCode', 'BilledAmount', 'ClaimStatus']
+
+              // Detect which columns contain numeric amounts so we can format them
+              const normH = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+              const isAmount = (h: string) => normH(h).includes('amount') || normH(h).includes('billed') || normH(h).includes('approved')
+
+              return (
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-border bg-background">
+                      {tableHeaders.map(h => (
+                        <th key={h} className="px-4 py-3 text-left text-xs font-medium text-secondary uppercase tracking-wide whitespace-nowrap">
+                          {h.replace(/_/g, ' ')}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {sampleRows.map((row, i) => (
+                      <tr key={i} className="hover:bg-background transition-colors">
+                        {tableHeaders.map(h => (
+                          <td key={h} className="px-4 py-2.5 text-xs font-mono text-secondary whitespace-nowrap">
+                            {isAmount(h) ? fmtAmount(row[h] ?? '') : (row[h] ?? '—')}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )
+            })()}
           </div>
         </div>
 
